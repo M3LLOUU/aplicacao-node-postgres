@@ -1,11 +1,11 @@
 services:
   postgres:
     image: postgres:16
-    container_name: meu_postgres
+    container_name: aula-node-postgres
     environment:
-      POSTGRES_USER: mellojr
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: Jaime2024
-      POSTGRES_DB: prova_db
+      POSTGRES_DB: aula_node_postgres
     ports:
       - "5432:5432"
     volumes:
