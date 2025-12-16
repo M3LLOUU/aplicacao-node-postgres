@@ -1,51 +1,206 @@
 const { Client } = require('pg');
+require('dotenv').config();
 
+// Configuração
 const client = new Client({
-    user: 'postgres',
-    password: 'Jaime2024',
-    host: 'localhost',
-    port: 5432,
-    database: 'aula_node_postgres'
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME
 });
 
-async function buscarClientes(){
-    try {
-        await client.connect();
+// ============================================
+// FUNÇÕES DE VALIDAÇÃO
+// ============================================
 
-        const resultado = await client.query('SELECT * FROM cliente');
-
-        console.log("Clientes encontrados: ");
-        console.log(resultado.rows);
-    
-        await client.end();
-    } catch (err) {
-        console.error("Erro:", err);
-    }   
+function validarCliente(nome, email) {
+  const erros = [];
+  
+  if (!nome || nome.trim() === '') {
+    erros.push('Nome é obrigatório');
+  } else if (nome.length < 3) {
+    erros.push('Nome deve ter pelo menos 3 caracteres');
+  }
+  
+  if (!email || email.trim() === '') {
+    erros.push('Email é obrigatório');
+  } else if (!email.includes('@')) {
+    erros.push('Email inválido');
+  }
+  
+  return erros;
 }
 
-async function inserirCliente(nome, email){
-    try {
-        await client.connect();
+function validarProduto(nome, preco) {
+  const erros = [];
+  
+  if (!nome || nome.trim() === '') {
+    erros.push('Nome é obrigatório');
+  }
+  
+  if (!preco || preco <= 0) {
+    erros.push('Preço deve ser maior que zero');
+  }
+  
+  return erros;
+}
 
-        const query = `
-        INSERT INTO cliente (nome, email)
-        VALUES('$1, $2');
-        RETURNING *
-        `;
+// ============================================
+// FUNÇÕES DE CLIENTE
+// ============================================
 
-        const resultado = await client.query(query, [nome, email]);
-
-        console.log("Clientes cadastrados");
-        console.log(resultado.rows[0]);
-
-        await client.end();
-
-
-    } catch (err) {
-        console.error("Erro:", err)
+async function adicionarCliente(nome, email, telefone = '') {
+  try {
+    const erros = validarCliente(nome, email);
+    if (erros.length > 0) {
+      console.error('❌ Erros de validação:');
+      erros.forEach(e => console.error(`  - ${e}`));
+      return false;
     }
+    
+    await client.connect();
+    
+    const resultado = await client.query(
+      'INSERT INTO clientes (nome, email, telefone) VALUES ($1, $2, $3) RETURNING id',
+      [nome, email, telefone]
+    );
+    
+    console.log(`✅ Cliente "${nome}" adicionado com sucesso! (ID: ${resultado.rows[0].id})`);
+    return true;
+    
+  } catch (erro) {
+    if (erro.message.includes('duplicate key')) {
+      console.error('❌ Email já cadastrado');
+    } else {
+      console.error('❌ Erro:', erro.message);
+    }
+    return false;
+  } finally {
+    await client.end();
+  }
 }
 
-inserirCliente('teste', 'teste@teste.com');
+async function listarClientes() {
+  try {
+    await client.connect();
+    
+    const resultado = await client.query(
+      'SELECT id, nome, email, telefone FROM clientes ORDER BY nome'
+    );
+    
+    console.log('\n📋 CLIENTES CADASTRADOS');
+    console.log('='.repeat(80));
+    
+    if (resultado.rows.length === 0) {
+      console.log('Nenhum cliente cadastrado');
+    } else {
+      resultado.rows.forEach(cliente => {
+        console.log(`[${cliente.id}] ${cliente.nome} | ${cliente.email} | ${cliente.telefone || '-'}`);
+      });
+      console.log(`\nTotal: ${resultado.rows.length} cliente(s)`);
+    }
+    
+  } catch (erro) {
+    console.error('❌ Erro:', erro.message);
+  } finally {
+    await client.end();
+  }
+}
 
-buscarClientes();
+// ============================================
+// FUNÇÕES DE PRODUTO
+// ============================================
+
+async function adicionarProduto(nome, preco, estoque = 0) {
+  try {
+    const erros = validarProduto(nome, preco);
+    if (erros.length > 0) {
+      console.error('❌ Erros de validação:');
+      erros.forEach(e => console.error(`  - ${e}`));
+      return false;
+    }
+    
+    await client.connect();
+    
+    const resultado = await client.query(
+      'INSERT INTO produtos (nome, preco, estoque) VALUES ($1, $2, $3) RETURNING id',
+      [nome, preco, estoque]
+    );
+    
+    console.log(`✅ Produto "${nome}" adicionado com sucesso! (ID: ${resultado.rows[0].id})`);
+    return true;
+    
+  } catch (erro) {
+    console.error('❌ Erro:', erro.message);
+    return false;
+  } finally {
+    await client.end();
+  }
+}
+
+async function listarProdutos() {
+  try {
+    await client.connect();
+    
+    const resultado = await client.query(
+      'SELECT id, nome, preco, estoque FROM produtos ORDER BY nome'
+    );
+    
+    console.log('\n📦 PRODUTOS CADASTRADOS');
+    console.log('='.repeat(80));
+    
+    if (resultado.rows.length === 0) {
+      console.log('Nenhum produto cadastrado');
+    } else {
+      let totalValor = 0;
+      
+      resultado.rows.forEach(produto => {
+        const valor = produto.preco * produto.estoque;
+        totalValor += valor;
+        console.log(`[${produto.id}] ${produto.nome} | R$ ${produto.preco.toFixed(2)} | Estoque: ${produto.estoque}`);
+      });
+      
+      console.log(`\nTotal: ${resultado.rows.length} produto(s)`);
+      console.log(`Valor total em estoque: R$ ${totalValor.toFixed(2)}`);
+    }
+    
+  } catch (erro) {
+    console.error('❌ Erro:', erro.message);
+  } finally {
+    await client.end();
+  }
+}
+
+// ============================================
+// FUNÇÃO PRINCIPAL
+// ============================================
+
+async function main() {
+  console.log('🏪 SISTEMA DE GERENCIAMENTO DE LOJA\n');
+  
+  // Adicionar clientes
+  console.log('--- Adicionando Clientes ---');
+  await adicionarCliente('Déric Martins', 'martins@email.com', '11999999999');
+  await adicionarCliente('Maria Santos', 'maria@email.com', '11988888888');
+  await adicionarCliente('Pedro Oliveira', 'pedro@email.com', '11977777777');
+  
+  // Listar clientes
+  await listarClientes();
+  
+  // Adicionar produtos
+  console.log('\n--- Adicionando Produtos ---');
+  await adicionarProduto('Notebook Dell', 3500.00, 5);
+  await adicionarProduto('Mouse Logitech', 80.00, 25);
+  await adicionarProduto('Teclado Mecânico', 350.00, 10);
+  await adicionarProduto('Monitor LG 24"', 800.00, 8);
+  
+  // Listar produtos
+  await listarProdutos();
+  
+  console.log('\n✅ Operações concluídas!');
+}
+
+// Executar
+main();
+
